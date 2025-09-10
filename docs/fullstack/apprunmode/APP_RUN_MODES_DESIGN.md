@@ -11,8 +11,8 @@
 
 ### 应用运行模式（Account Mode）
 - accountMode ∈ { 'PERSONAL', 'PARENTAL', 'DUAL' }
-  - PERSONAL：仅个人视角（激活目标恒为个人）
-  - PARENTAL：仅家长控制视角（激活目标恒为孩子）
+  - PERSONAL：仅个人视角
+  - PARENTAL：仅家长控制视角
   - DUAL：双视角，允许在个人与家长控制之间切换
 
 当 accountMode='DUAL' 时，增加一个“子目标状态/视图取向”用于记录前端当前应展示的视角：
@@ -26,14 +26,12 @@
 - isParentalView = (accountMode === 'PARENTAL') 或 (accountMode === 'DUAL' 且 appView === 'parental_control')
 - isPersonalView = (accountMode === 'PERSONAL' && appView === 'self_mangement')
 
-### 激活目标（Active Target）
-- 反映当前“操作对象”，技术上仍通过 /auth/take-over 切换 Token 的 dataGroup。
-- 与 accountMode/appView 的关系：
-  - PERSONAL → activeTarget=personal（self）；appView 固定为 self_mangement
-  - PARENTAL → activeTarget=parental（child）；appView 固定为 parental_control
-  - DUAL → activeTarget 由 appView 决定（personal 或 parental）
-  - 切到 parental：POST /auth/take-over { id: childDataGroup }
-  - 切回 personal：POST /auth/take-over（无 id）
+### 会话切换与 Token.dataGroup
+- 不再使用 activeTarget 概念。当前“操作主体”仅由 Token.dataGroup 决定，通过 /auth/take-over 进行切换。
+- 关系说明：
+  - PERSONAL：appView 可为 self_mangement 或 self_mangement_child；Token.dataGroup 始终指向本人；/auth/take-over（无 id）用于校正指向本人。
+  - PARENTAL：appView 固定为 parental_control；/auth/take-over（child dataGroup）将 Token.dataGroup 指向对应孩子。
+  - DUAL：appView='self_mangement' 时调用 /auth/take-over（无 id）；appView='parental_control' 时调用 /auth/take-over（child dataGroup）。
 
 ### 能力范围（Feature Gate）
 根据 accountMode、appView 与 enableSelfJournaling 决定“哪些功能可见/可用”，用于菜单、路由守卫和页面内模块的显示控制。
@@ -46,7 +44,7 @@
 - accountMode 不同场景：
   - accountMode='PERSONAL'：仅显示当前用户头像；点击头像可执行自我接管（无 id）。
   - accountMode='PARENTAL'：仅显示所有已关联孩子的头像列表；点击任一孩子头像切换至该孩子（携带 dataGroup）。
-  - accountMode='DUAL'：同时显示“自己头像 + 孩子头像列表”，二者之间以细竖线分隔；
+  - accountMode='DUAL'：同时显示“自己头像 + 孩子头像列表”；
     - 点击自己头像：设置 cookies.appView='self_mangement' 并调用 /auth/take-over（无 id）。
     - 点击孩子头像：写入 cookies.selectedChildDataGroup=child.dataGroup，设置 cookies.appView='parental_control' 并调用 /auth/take-over（携带该 dataGroup）。
 - 若 DUAL 且系统中无孩子（children.length=0）：仅显示自己头像；在合适位置引导前往“家庭管理/成员邀请”。
@@ -57,11 +55,15 @@
 - accountMode='PARENTAL' 或（accountMode='DUAL' 且 appView='parental_control'）：
   - 显示：孩子相关功能（时间金币、时间皇冠、孩子银行账户、趋势洞察等）。
   - 隐藏：提醒（Reminders）、笔记（Notes）、家长个人日志。
-- accountMode='PERSONAL'：
+- accountMode='PERSONAL' 且 appView='self_mangement_child'（孩子视角）：
+  - 显示：与家长控制视角当前一致的孩子相关界面与模块（后续会逐步引入差异化控制，以区分家长控制与孩子视角）。
+  - 隐藏：成人个人侧功能（例如模式切换入口等）；该用户不可切换到其他账户模式（PARENTAL/DUAL）。
+  - 说明：此情形用于“账户为个人，且属于某家庭组并具有 child 角色”的用户；UI 为儿童体验，能力不包含任何家长操作。
+- accountMode='PERSONAL' 且 appView='self_mangement'：
   - 显示：个人功能（提醒、笔记、个人仪表板、个人统计、个人日志等）。
   - 隐藏：孩子专属功能（金币、皇冠、孩子银行等）。
 - accountMode='DUAL' 且 appView='self_mangement'：
-  - 若 enableSelfJournaling=true：同 PERSONAL。
+  - 若 enableSelfJournaling=true：同 PERSONAL（self_mangement）。
   - 若 enableSelfJournaling=false：
     - 隐藏/禁用：个人日志与其所有派生能力（计划/Plan、活动统计/Statistics、实践/Practice 系列等所有依赖日志数据的功能）。
     - 仍可用：提醒（Reminders）与笔记（Notes）。
